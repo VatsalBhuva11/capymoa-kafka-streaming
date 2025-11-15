@@ -34,10 +34,13 @@ ENV/
 
 # Project specific
 experiment_results.json
+results/
 *.log
 *.pkl
 *.h5
 *.model
+*.csv
+comparison_report.*
 
 # OS
 .DS_Store

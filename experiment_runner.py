@@ -1,203 +1,319 @@
 """
-Experiment Runner Module
-Runs experiments across datasets with different models and settings.
+Experiment runner for comparing different models across datasets.
+Runs multiple experiments and generates comparison reports.
 """
-
-import json
+import subprocess
 import time
-from typing import Dict, List, Optional
+import json
+import os
+import argparse
+from datetime import datetime
 import pandas as pd
-from dataset_loader import DatasetStreamer
-from streaming_pipeline import StreamingPipeline
-from threading import Thread
-import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
-class ExperimentRunner:
-    """Runs experiments and compares results."""
+def run_experiment(dataset, task, model, use_drift_detection=True, 
+                   stream_rate=0.01, max_instances=None, results_dir='results'):
+    """
+    Run a single experiment.
     
-    def __init__(self, bootstrap_servers: str = 'localhost:9092', topic: str = 'stream-data'):
-        self.bootstrap_servers = bootstrap_servers
-        self.topic = topic
-        self.results = []
+    Returns:
+        dict: Experiment results
+    """
+    print(f"\n{'='*60}")
+    print(f"Running experiment: {dataset} - {task} - {model}")
+    print(f"{'='*60}")
     
-    def run_experiment(self,
-                      dataset_name: str,
-                      model_type: str,
-                      preprocess: bool = True,
-                      drift_detection: bool = True,
-                      drift_detector_type: str = 'adwin',
-                      max_instances: Optional[int] = None,
-                      drift_injection: Optional[Dict] = None) -> Dict:
-        """
-        Run a single experiment.
-        
-        Returns:
-            Experiment results dictionary
-        """
-        print(f"\n{'='*80}")
-        print(f"Experiment: {dataset_name} | Model: {model_type} | Preprocess: {preprocess}")
-        print(f"{'='*80}\n")
-        
-        # Start producer in separate thread
-        streamer = DatasetStreamer(self.bootstrap_servers, self.topic)
-        producer_thread = Thread(
-            target=streamer.stream_dataset,
-            args=(dataset_name,),
-            kwargs={'delay': 0.001, 'max_instances': max_instances, 'drift_injection': drift_injection}
+    topic_name = f"ml-stream-{dataset}"
+    log_file = os.path.join(results_dir, f"{dataset}_{task}_{model}_metrics.csv")
+    results_file = os.path.join(results_dir, f"{dataset}_{task}_{model}_results.json")
+    
+    # Start producer in background
+    producer_cmd = [
+        'python', 'producer.py',
+        '--dataset', dataset,
+        '--topic-prefix', 'ml-stream',
+        '--stream-rate', str(stream_rate)
+    ]
+    
+    if use_drift_detection:
+        producer_cmd.append('--inject-drift')
+    
+    if max_instances:
+        # Note: producer doesn't support max-instances directly, 
+        # but we can limit via dataset size or let consumer handle it
+        pass
+    
+    print("Starting producer...")
+    producer_process = subprocess.Popen(
+        producer_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    
+    # Wait a bit for producer to start and send some messages
+    time.sleep(3)
+    
+    # Start consumer
+    consumer_cmd = [
+        'python', 'consumer.py',
+        '--topic', topic_name,
+        '--task', task,
+        '--model', model,
+        '--log-file', log_file
+    ]
+    
+    if not use_drift_detection:
+        consumer_cmd.append('--no-drift-detection')
+    
+    if max_instances:
+        consumer_cmd.extend(['--max-instances', str(max_instances)])
+    
+    print("Starting consumer...")
+    try:
+        # Run consumer (it will process messages as they arrive)
+        consumer_process = subprocess.run(
+            consumer_cmd,
+            timeout=3600,  # 1 hour timeout
+            capture_output=True,
+            text=True
         )
-        producer_thread.daemon = True
-        producer_thread.start()
         
-        # Give producer time to start
-        time.sleep(2)
+        # Give producer a moment to finish if it hasn't
+        try:
+            producer_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            # Producer still running, terminate it
+            producer_process.terminate()
+            producer_process.wait()
         
-        # Run pipeline
-        pipeline = StreamingPipeline(
-            bootstrap_servers=self.bootstrap_servers,
-            topic=self.topic,
-            model_type=model_type,
-            preprocess=preprocess,
-            drift_detection=drift_detection,
-            drift_detector_type=drift_detector_type,
-            drift_injection=drift_injection
-        )
-        
-        results = pipeline.run(max_instances=max_instances)
-        
-        # Wait for producer to finish
-        producer_thread.join(timeout=30)
-        
-        # Store experiment metadata
-        experiment_result = {
-            'dataset': dataset_name,
-            'model': model_type,
-            'preprocess': preprocess,
-            'drift_detection': drift_detection,
-            'drift_detector': drift_detector_type,
-            'max_instances': max_instances or 'all',
-            'results': results
-        }
-        
-        self.results.append(experiment_result)
-        return experiment_result
-    
-    def run_comparison_experiments(self, 
-                                   datasets: List[str],
-                                   models: List[str],
-                                   max_instances_per_dataset: Optional[int] = 1000,
-                                   preprocess_options: List[bool] = [True, False],
-                                   drift_detection: bool = True):
-        """
-        Run comparison experiments across datasets and models.
-        
-        Args:
-            datasets: List of dataset names
-            models: List of model types
-            max_instances_per_dataset: Max instances per dataset
-            preprocess_options: List of preprocessing options to test
-            drift_detection: Whether to use drift detection
-        """
-        print(f"\n{'='*80}")
-        print(f"Starting Comparison Experiments")
-        print(f"Datasets: {datasets}")
-        print(f"Models: {models}")
-        print(f"Preprocessing options: {preprocess_options}")
-        print(f"{'='*80}\n")
-        
-        for dataset in datasets:
-            for model in models:
-                for preprocess in preprocess_options:
-                    try:
-                        self.run_experiment(
-                            dataset_name=dataset,
-                            model_type=model,
-                            preprocess=preprocess,
-                            drift_detection=drift_detection,
-                            max_instances=max_instances_per_dataset
-                        )
-                        time.sleep(5)  # Pause between experiments
-                    except Exception as e:
-                        print(f"Error in experiment {dataset}-{model}-preprocess{preprocess}: {e}")
-                        continue
-    
-    def generate_summary(self) -> pd.DataFrame:
-        """Generate summary DataFrame of all experiments."""
-        summary_data = []
-        
-        for exp in self.results:
-            final_metrics = exp['results'].get('final_metrics', {})
-            cumulative = final_metrics.get('cumulative', {})
-            
-            row = {
-                'Dataset': exp['dataset'],
-                'Model': exp['model'],
-                'Preprocess': exp['preprocess'],
-                'Drift Detection': exp['drift_detection'],
-                'Instances': exp['results'].get('final_metrics', {}).get('instance_count', 0),
-                'Drift Events': len(exp['results'].get('drift_events', []))
+        # Load results if available
+        if os.path.exists(results_file):
+            with open(results_file, 'r') as f:
+                results = json.load(f)
+        else:
+            results = {
+                'status': 'completed', 
+                'output': consumer_process.stdout,
+                'stderr': consumer_process.stderr
             }
             
-            # Add task-specific metrics
-            if 'accuracy' in cumulative:
-                row['Accuracy'] = cumulative.get('accuracy', 0)
-                row['F1'] = cumulative.get('f1', 0)
-            else:
-                row['MAE'] = cumulative.get('mae', 0)
-                row['MSE'] = cumulative.get('mse', 0)
-                row['RMSE'] = cumulative.get('rmse', 0)
+    except subprocess.TimeoutExpired:
+        print("Experiment timed out")
+        producer_process.terminate()
+        try:
+            producer_process.wait(timeout=2)
+        except:
+            producer_process.kill()
+        results = {'status': 'timeout'}
+    except Exception as e:
+        print(f"Error running experiment: {e}")
+        producer_process.terminate()
+        try:
+            producer_process.wait(timeout=2)
+        except:
+            producer_process.kill()
+        results = {'status': 'error', 'error': str(e)}
+    
+    return {
+        'dataset': dataset,
+        'task': task,
+        'model': model,
+        'drift_detection': use_drift_detection,
+        'results': results,
+        'timestamp': datetime.now().isoformat()
+    }
+
+
+def compare_results(results_dir='results', output_file='comparison_report.html'):
+    """Compare results across all experiments and generate a report."""
+    print("\nGenerating comparison report...")
+    
+    # Load all result files
+    all_results = []
+    for filename in os.listdir(results_dir):
+        if filename.endswith('_results.json'):
+            filepath = os.path.join(results_dir, filename)
+            try:
+                with open(filepath, 'r') as f:
+                    result = json.load(f)
+                    # Extract metadata from filename
+                    parts = filename.replace('_results.json', '').split('_')
+                    if len(parts) >= 3:
+                        result['dataset'] = parts[0]
+                        result['task'] = parts[1]
+                        result['model'] = '_'.join(parts[2:])
+                    all_results.append(result)
+            except Exception as e:
+                print(f"Error loading {filename}: {e}")
+    
+    if not all_results:
+        print("No results found to compare")
+        return
+    
+    # Create comparison DataFrame
+    comparison_data = []
+    for result in all_results:
+        if 'total_instances' in result:
+            row = {
+                'dataset': result.get('dataset', 'unknown'),
+                'task': result.get('task', 'unknown'),
+                'model': result.get('model', 'unknown'),
+                'total_instances': result.get('total_instances', 0),
+                'drift_events': result.get('drift_events', 0)
+            }
             
-            summary_data.append(row)
+            if result.get('task') == 'classification':
+                row['cumulative_accuracy'] = result.get('cumulative_accuracy')
+                row['window_accuracy'] = result.get('window_accuracy')
+            else:
+                row['cumulative_mae'] = result.get('cumulative_mae')
+                row['cumulative_mse'] = result.get('cumulative_mse')
+                row['window_mae'] = result.get('window_mae')
+            
+            comparison_data.append(row)
+    
+    df = pd.DataFrame(comparison_data)
+    
+    # Generate HTML report
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Experiment Comparison Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; }}
+            table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #4CAF50; color: white; }}
+            tr:nth-child(even) {{ background-color: #f2f2f2; }}
+            h1 {{ color: #333; }}
+            h2 {{ color: #666; }}
+        </style>
+    </head>
+    <body>
+        <h1>Streaming ML Experiment Comparison Report</h1>
+        <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
         
-        return pd.DataFrame(summary_data)
+        <h2>Summary Statistics</h2>
+        {df.to_html(index=False, escape=False)}
+        
+        <h2>Best Models by Dataset</h2>
+    """
     
-    def save_results(self, filename: str = 'experiment_results.json'):
-        """Save experiment results to JSON file."""
-        with open(filename, 'w') as f:
-            json.dump(self.results, f, indent=2, default=str)
-        print(f"Results saved to {filename}")
+    # Find best models
+    for dataset in df['dataset'].unique():
+        dataset_df = df[df['dataset'] == dataset]
+        html_content += f"<h3>{dataset}</h3>"
+        
+        if dataset_df['task'].iloc[0] == 'classification':
+            best = dataset_df.loc[dataset_df['cumulative_accuracy'].idxmax()]
+            html_content += f"<p><strong>Best Model:</strong> {best['model']} "
+            html_content += f"(Accuracy: {best['cumulative_accuracy']:.4f})</p>"
+        else:
+            best = dataset_df.loc[dataset_df['cumulative_mae'].idxmin()]
+            html_content += f"<p><strong>Best Model:</strong> {best['model']} "
+            html_content += f"(MAE: {best['cumulative_mae']:.4f})</p>"
     
-    def print_summary(self):
-        """Print summary of experiments."""
-        df = self.generate_summary()
-        print("\n" + "="*80)
-        print("EXPERIMENT SUMMARY")
-        print("="*80)
-        print(df.to_string(index=False))
-        print("="*80 + "\n")
+    html_content += """
+    </body>
+    </html>
+    """
+    
+    # Save report
+    with open(output_file, 'w') as f:
+        f.write(html_content)
+    
+    print(f"Comparison report saved to {output_file}")
+    
+    # Also save CSV
+    csv_file = output_file.replace('.html', '.csv')
+    df.to_csv(csv_file, index=False)
+    print(f"Comparison data saved to {csv_file}")
+    
+    # Print summary
+    print("\n" + "="*60)
+    print("SUMMARY")
+    print("="*60)
+    print(df.to_string(index=False))
 
 
-def run_standard_experiments():
-    """Run standard set of experiments."""
-    runner = ExperimentRunner()
+def main():
+    parser = argparse.ArgumentParser(description='Run streaming ML experiments')
+    parser.add_argument('--experiments', type=str, nargs='+',
+                       help='Experiments to run (format: dataset:task:model)')
+    parser.add_argument('--all', action='store_true',
+                       help='Run all predefined experiments')
+    parser.add_argument('--stream-rate', type=float, default=0.01,
+                       help='Streaming rate in seconds')
+    parser.add_argument('--max-instances', type=int, default=None,
+                       help='Maximum instances per experiment')
+    parser.add_argument('--no-drift', action='store_true',
+                       help='Disable drift detection')
+    parser.add_argument('--results-dir', type=str, default='results',
+                       help='Directory to save results')
+    parser.add_argument('--compare-only', action='store_true',
+                       help='Only generate comparison report from existing results')
     
-    classification_datasets = ['electricity', 'covtype', 'sensor']
-    regression_datasets = ['fried', 'bike']
+    args = parser.parse_args()
     
-    classification_models = ['hoeffding_tree', 'naive_bayes', 'sgd']
-    regression_models = ['sgd', 'linear', 'arf']
+    # Create results directory
+    os.makedirs(args.results_dir, exist_ok=True)
     
-    # Run classification experiments
-    print("\nRunning classification experiments...")
-    runner.run_comparison_experiments(
-        datasets=classification_datasets,
-        models=classification_models,
-        max_instances_per_dataset=2000,
-        preprocess_options=[True, False]
-    )
+    if args.compare_only:
+        compare_results(args.results_dir)
+        return
     
-    # Run regression experiments
-    print("\nRunning regression experiments...")
-    runner.run_comparison_experiments(
-        datasets=regression_datasets,
-        models=regression_models,
-        max_instances_per_dataset=2000,
-        preprocess_options=[True, False]
-    )
+    # Define experiments
+    if args.all:
+        experiments = [
+            ('electricity', 'classification', 'hoeffding_tree'),
+            ('electricity', 'classification', 'arf'),
+            ('electricity', 'classification', 'knn'),
+            ('bike', 'regression', 'fimtdd'),
+            ('bike', 'regression', 'arf'),
+            ('bike', 'regression', 'knn'),
+        ]
+    elif args.experiments:
+        experiments = []
+        for exp in args.experiments:
+            parts = exp.split(':')
+            if len(parts) == 3:
+                experiments.append(tuple(parts))
+            else:
+                print(f"Invalid experiment format: {exp} (expected dataset:task:model)")
+                return
+    else:
+        print("Please specify --all or --experiments")
+        return
     
-    # Generate and print summary
-    runner.print_summary()
-    runner.save_results()
+    # Run experiments
+    all_results = []
+    for dataset, task, model in experiments:
+        result = run_experiment(
+            dataset, task, model,
+            use_drift_detection=not args.no_drift,
+            stream_rate=args.stream_rate,
+            max_instances=args.max_instances,
+            results_dir=args.results_dir
+        )
+        all_results.append(result)
+        
+        # Small delay between experiments
+        time.sleep(2)
     
-    return runner
+    # Save all results
+    results_summary_file = os.path.join(args.results_dir, 'all_experiments.json')
+    with open(results_summary_file, 'w') as f:
+        json.dump(all_results, f, indent=2)
+    
+    print(f"\nAll experiment results saved to {results_summary_file}")
+    
+    # Generate comparison
+    compare_results(args.results_dir)
+
+
+if __name__ == '__main__':
+    main()
 

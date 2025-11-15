@@ -1,179 +1,93 @@
 # Quick Start Guide
 
-## Prerequisites Setup
-
-### 1. Install Docker
-
-Install Docker and Docker Compose:
-- **Linux**: Follow [Docker installation guide](https://docs.docker.com/engine/install/)
-- **macOS**: Install [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/)
-- **Windows**: Install [Docker Desktop](https://docs.docker.com/desktop/install/windows-install/)
-
-Verify installation:
-```bash
-docker --version
-docker compose version  # or docker-compose --version
-```
-
-### 2. Start Kafka and Zookeeper with Docker
-
-**Option A: Using helper script (recommended)**
-```bash
-chmod +x start_kafka.sh
-./start_kafka.sh
-```
-
-**Option B: Using Docker Compose directly**
-```bash
-docker compose up -d
-
-# Wait a few seconds for services to start, then create topic
-docker exec -it kafka bash -c "kafka-topics --create \
-  --topic stream-data \
-  --bootstrap-server localhost:9092 \
-  --partitions 1 \
-  --replication-factor 1"
-
-```
-
-**Stop services:**
-```bash
-./stop_kafka.sh
-# or
-docker compose down
-```
-
-### 3. Install Python Dependencies
+## 1. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-**Note**: CapyMOA requires Java. If you see JPype errors:
+## 2. Start Kafka
+
 ```bash
-# Linux
-sudo apt-get install default-jdk
-
-# macOS  
-brew install openjdk
-
-# Then reinstall
-pip install --upgrade --force-reinstall capymoa jpype1
+./start_kafka.sh
+# OR
+docker-compose up -d
 ```
 
-### 4. Verify Setup
+Wait ~10 seconds for Kafka to be ready.
+
+## 3. Verify Setup
 
 ```bash
 python verify_setup.py
 ```
 
-## Running the Pipeline
+## 4. Run a Simple Experiment
 
-### Basic Usage
-
-**Single dataset with dashboard:**
+### Terminal 1: Start Producer
 ```bash
-python main.py --mode single --dataset electricity --model hoeffding_tree --dashboard
+python producer.py --dataset electricity --stream-rate 0.1
 ```
 
-**All datasets:**
+### Terminal 2: Start Consumer
 ```bash
-python main.py --mode all
+python consumer.py --topic ml-stream-electricity --task classification --model hoeffding_tree --log-file results/test.csv
 ```
 
-**Run experiments:**
+## 5. Run Full Experiments
+
 ```bash
-python main.py --mode experiments
+# Run all experiments (limited to 5000 instances each for speed)
+python experiment_runner.py --all --max-instances 5000 --stream-rate 0.01
+
+# Generate comparison report
+python experiment_runner.py --compare-only
 ```
 
-### Examples
+## Common Commands
 
-**Classification example:**
+### Stream Electricity Dataset
 ```bash
-python main.py --mode single --dataset covtype --model naive_bayes --max-instances 2000
+python producer.py --dataset electricity --stream-rate 0.1 --inject-drift
 ```
 
-**Regression example:**
+### Stream Bike Dataset
 ```bash
-python main.py --mode single --dataset fried --model sgd --no-preprocess
+python producer.py --dataset bike --stream-rate 0.1 --inject-drift
 ```
 
-**With drift detection:**
+### Classification Models
 ```bash
-python main.py --mode single --dataset sensor --model hoeffding_tree --dashboard
+python consumer.py --topic ml-stream-electricity --task classification --model hoeffding_tree
+python consumer.py --topic ml-stream-electricity --task classification --model arf
+python consumer.py --topic ml-stream-electricity --task classification --model knn
 ```
 
-## Using Individual Components
-
-### Stream a Dataset
-
-```python
-from dataset_loader import DatasetStreamer
-
-streamer = DatasetStreamer()
-streamer.stream_dataset('electricity', delay=0.01, max_instances=1000)
+### Regression Models
+```bash
+python consumer.py --topic ml-stream-bike --task regression --model fimtdd
+python consumer.py --topic ml-stream-bike --task regression --model arf
+python consumer.py --topic ml-stream-bike --task regression --model knn
 ```
 
-### Run Pipeline
+## Stop Services
 
-```python
-from streaming_pipeline import StreamingPipeline
-
-pipeline = StreamingPipeline(
-    model_type='hoeffding_tree',
-    preprocess=True,
-    drift_detection=True
-)
-results = pipeline.run(max_instances=1000)
-```
-
-### Run Experiments
-
-```python
-from experiment_runner import ExperimentRunner
-
-runner = ExperimentRunner()
-runner.run_experiment(
-    dataset_name='electricity',
-    model_type='hoeffding_tree',
-    preprocess=True,
-    max_instances=1000
-)
-runner.print_summary()
+```bash
+./stop_kafka.sh
+# OR
+docker-compose down
 ```
 
 ## Troubleshooting
 
-### Kafka Connection Error
-- Ensure Docker containers are running: `docker compose ps`
-- Check Kafka logs: `docker compose logs kafka`
-- Verify Kafka is accessible: `docker compose exec kafka kafka-topics --list --bootstrap-server localhost:9092`
-- Check if topic exists: `docker compose exec kafka kafka-topics --describe --topic stream-data --bootstrap-server localhost:9092`
-- Restart services: `./stop_kafka.sh && ./start_kafka.sh`
+1. **Kafka connection error**: Make sure Docker containers are running
+   ```bash
+   docker-compose ps
+   ```
 
-### Import Errors
-- Install missing packages: `pip install <package-name>`
-- Check Python version: `python --version` (requires Python 3.8+)
+2. **Port already in use**: Stop other Kafka instances or change ports in `docker-compose.yml`
 
-### Dataset Loading Issues
-- Verify CapyMOA installation: `python -c "import capymoa; print(capymoa.__version__)"`
-- Check internet connection (datasets may download on first use)
+3. **Dataset download slow**: First run will download datasets (~50MB). Be patient.
 
-### Dashboard Not Loading
-- Check if port 8050 is available: `lsof -i :8050`
-- Try different port: Modify `dashboard.py` port parameter
-
-## Next Steps
-
-1. **Explore different models**: Try different model types for each dataset
-2. **Experiment with preprocessing**: Compare with/without preprocessing
-3. **Analyze drift detection**: Observe how drift detection affects model performance
-4. **Customize experiments**: Modify `experiment_runner.py` for your own experiments
-
-## Performance Tips
-
-- Use `--delay 0.001` for faster streaming (simulation)
-- Limit instances with `--max-instances` for quick testing
-- Disable preprocessing with `--no-preprocess` for faster processing
-- Use simpler models (e.g., `sgd`) for faster training
+4. **Consumer timeout**: Increase `consumer_timeout_ms` in `consumer.py` if producer is slow
 
