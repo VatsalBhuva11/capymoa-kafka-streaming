@@ -6,13 +6,15 @@ Supports multi-model comparison and automated updates.
 import dash
 from dash import dcc, html, Input, Output, State
 import plotly.graph_objs as go
+import plotly.express as px
 import pandas as pd
 import os
 import glob
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import json
+import numpy as np
 
 
 class MetricsDashboard:
@@ -83,40 +85,253 @@ class MetricsDashboard:
         return pd.concat(all_data, ignore_index=True)
     
     def setup_layout(self):
-        """Setup dashboard layout."""
+        """Setup dashboard layout with dark mode."""
+        # Dark mode color scheme
+        bg_dark = '#0f1419'
+        card_dark = '#1a1f2e'
+        text_primary = '#e4e6eb'
+        text_secondary = '#b0b3b8'
+        accent_blue = '#3b82f6'
+        accent_green = '#10b981'
+        accent_red = '#ef4444'
+        accent_purple = '#8b5cf6'
+        accent_orange = '#f59e0b'
+        border_color = '#2d3748'
+        
+        # Add CSS styles using app.index_string
+        self.app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+                /* Override default browser styles for inputs and dropdowns */
+                input[type="number"], input[type="text"] {
+                    background-color: #1a1f2e !important;
+                    color: #e4e6eb !important;
+                    border: 1px solid #2d3748 !important;
+                    outline: none !important;
+                }
+                
+                input[type="number"]:focus, input[type="text"]:focus {
+                    border: 1px solid #3b82f6 !important;
+                    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1) !important;
+                }
+                
+                /* Dropdown styling - Dash uses react-select */
+                .Select-control, .Select-menu-outer, 
+                .css-1s2u09g-control, .css-1pahdxg-control,
+                .css-26l3qy-menu {
+                    background-color: #1a1f2e !important;
+                    border: 1px solid #2d3748 !important;
+                    color: #e4e6eb !important;
+                    box-shadow: none !important;
+                }
+                
+                .Select-control:hover, 
+                .css-1s2u09g-control:hover,
+                .css-1pahdxg-control:hover {
+                    border: 1px solid #3b82f6 !important;
+                }
+                
+                .Select-value-label, .Select-input input,
+                .css-1uccc91-singleValue, .css-1hwfws3 {
+                    color: #e4e6eb !important;
+                }
+                
+                .Select-placeholder, .css-1wa3eu0-placeholder {
+                    color: #b0b3b8 !important;
+                }
+                
+                .Select-option, .css-1n7v3ny-option {
+                    background-color: #1a1f2e !important;
+                    color: #e4e6eb !important;
+                }
+                
+                .Select-option:hover, .Select-option.is-focused,
+                .css-1n7v3ny-option:hover, .css-1n7v3ny-option--is-focused {
+                    background-color: #2d3748 !important;
+                }
+                
+                .Select-option.is-selected, .css-1n7v3ny-option--is-selected {
+                    background-color: #3b82f6 !important;
+                    color: #ffffff !important;
+                }
+                
+                /* Remove white outline/border from focused elements */
+                .Select-control:focus, .Select-control:focus-within,
+                .css-1pahdxg-control:focus, .css-1pahdxg-control:focus-within {
+                    border: 1px solid #3b82f6 !important;
+                    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.1) !important;
+                    outline: none !important;
+                }
+                
+                /* Remove white borders from all elements */
+                * {
+                    box-sizing: border-box;
+                }
+                
+                /* Remove any default white borders/outlines - but keep focus indicators */
+                input:focus, select:focus, button:focus {
+                    outline: none !important;
+                }
+                
+                /* Ensure no white backgrounds leak through */
+                body, html {
+                    background-color: #0f1419 !important;
+                }
+                
+                /* Checklist styling */
+                .form-check-input {
+                    background-color: #1a1f2e !important;
+                    border: 1px solid #2d3748 !important;
+                }
+                
+                .form-check-input:checked {
+                    background-color: #3b82f6 !important;
+                    border-color: #3b82f6 !important;
+                }
+                
+                /* Additional react-select overrides for all possible class names */
+                [class*="control"], [class*="menu"], [class*="option"] {
+                    background-color: #1a1f2e !important;
+                    border-color: #2d3748 !important;
+                    color: #e4e6eb !important;
+                }
+                
+                /* Ensure input text is visible */
+                input::placeholder {
+                    color: #b0b3b8 !important;
+                    opacity: 0.7 !important;
+                }
+                
+                /* Make sure number input arrows are visible */
+                input[type="number"]::-webkit-inner-spin-button,
+                input[type="number"]::-webkit-outer-spin-button {
+                    opacity: 0.7;
+                    filter: invert(0.5);
+                }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
+        
         self.app.layout = html.Div([
+            # Header section
             html.Div([
-                html.H1("Streaming ML Pipeline - Live Dashboard", 
-                        style={'textAlign': 'center', 'color': '#2c3e50', 'marginBottom': '20px'}),
+                html.Div([
+                    html.H1("Streaming ML Pipeline Dashboard", 
+                            style={
+                                'textAlign': 'left', 
+                                'color': text_primary, 
+                                'marginBottom': '8px',
+                                'fontSize': '2.2em',
+                                'fontWeight': '600',
+                                'letterSpacing': '-0.5px'
+                            }),
+                    html.P("Real-time Machine Learning Performance Monitoring", 
+                           style={
+                               'textAlign': 'left', 
+                               'color': text_secondary, 
+                               'fontSize': '0.95em', 
+                               'marginBottom': '0',
+                               'fontWeight': '400'
+                           }),
+                ], style={'flex': '1'}),
                 html.Div([
                     html.Div([
-                        html.Label("Auto-refresh (seconds):", style={'fontWeight': 'bold'}),
+                        html.Label("Auto-refresh (s):", 
+                                  style={
+                                      'fontWeight': '500', 
+                                      'color': text_secondary, 
+                                      'marginRight': '10px',
+                                      'fontSize': '0.9em'
+                                  }),
                         dcc.Input(
                             id='refresh-interval',
                             type='number',
                             value=self.update_interval,
                             min=1,
                             max=60,
-                            style={'width': '100px', 'marginLeft': '10px'}
+                            style={
+                                'width': '70px', 
+                                'padding': '8px 12px',
+                                'borderRadius': '6px',
+                                'border': f'1px solid {border_color}',
+                                'backgroundColor': card_dark,
+                                'color': text_primary,
+                                'fontSize': '0.95em',
+                                'fontWeight': '600',
+                                'outline': 'none',
+                                'boxShadow': 'none',
+                                'caretColor': accent_blue
+                            }
                         ),
                     ], style={'display': 'inline-block', 'marginRight': '20px'}),
                     html.Div([
                         html.Button("Refresh Now", id='refresh-button', n_clicks=0,
-                                   style={'padding': '10px 20px', 'backgroundColor': '#3498db', 
-                                         'color': 'white', 'border': 'none', 'borderRadius': '5px',
-                                         'cursor': 'pointer'}),
+                                   style={
+                                       'padding': '8px 20px', 
+                                       'backgroundColor': accent_blue, 
+                                       'color': '#ffffff',
+                                       'border': 'none', 
+                                       'borderRadius': '6px',
+                                       'cursor': 'pointer',
+                                       'fontWeight': '500',
+                                       'fontSize': '0.9em',
+                                       'transition': 'all 0.2s'
+                                   }),
                     ], style={'display': 'inline-block', 'marginRight': '20px'}),
                     html.Div([
-                        html.Span("Last updated: ", style={'fontWeight': 'bold'}),
-                        html.Span(id='last-update-time', children='Never')
+                        html.Span("Last updated: ", 
+                                 style={
+                                     'fontWeight': '500', 
+                                     'color': text_secondary, 
+                                     'marginRight': '5px',
+                                     'fontSize': '0.9em'
+                                 }),
+                        html.Span(id='last-update-time', children='Never',
+                                 style={
+                                     'color': accent_green, 
+                                     'fontFamily': 'monospace',
+                                     'fontSize': '0.9em'
+                                 })
                     ], style={'display': 'inline-block'}),
-                ], style={'textAlign': 'center', 'marginBottom': '20px', 'padding': '10px',
-                         'backgroundColor': '#ecf0f1', 'borderRadius': '5px'}),
-            ]),
+                ], style={'display': 'flex', 'alignItems': 'center'}),
+            ], style={
+                'display': 'flex',
+                'justifyContent': 'space-between',
+                'alignItems': 'center',
+                'padding': '24px 32px',
+                'backgroundColor': card_dark,
+                'borderRadius': '12px',
+                'marginBottom': '24px',
+                'border': f'1px solid {border_color}'
+            }),
             
+            # Filters section
             html.Div([
                 html.Div([
-                    html.Label("Task Type:", style={'fontWeight': 'bold', 'marginRight': '10px'}),
+                    html.Label("Task Type", 
+                              style={
+                                  'fontWeight': '500', 
+                                  'marginBottom': '8px', 
+                                  'color': text_secondary,
+                                  'fontSize': '0.85em',
+                                  'textTransform': 'uppercase',
+                                  'letterSpacing': '0.5px'
+                              }),
                     dcc.Dropdown(
                         id='task-filter',
                         options=[
@@ -125,73 +340,290 @@ class MetricsDashboard:
                             {'label': 'Regression', 'value': 'regression'}
                         ],
                         value='all',
-                        style={'width': '200px', 'display': 'inline-block'}
+                        style={
+                            'width': '100%'
+                        },
+                        className='dark-dropdown'
                     ),
-                ], style={'display': 'inline-block', 'marginRight': '20px'}),
+                ], style={'flex': '1', 'marginRight': '16px'}),
                 html.Div([
-                    html.Label("Dataset:", style={'fontWeight': 'bold', 'marginRight': '10px'}),
+                    html.Label("Dataset", 
+                              style={
+                                  'fontWeight': '500', 
+                                  'marginBottom': '8px', 
+                                  'color': text_secondary,
+                                  'fontSize': '0.85em',
+                                  'textTransform': 'uppercase',
+                                  'letterSpacing': '0.5px'
+                              }),
                     dcc.Dropdown(
                         id='dataset-filter',
                         options=[],
                         value='all',
-                        style={'width': '200px', 'display': 'inline-block'}
+                        style={
+                            'width': '100%'
+                        },
+                        className='dark-dropdown'
                     ),
-                ], style={'display': 'inline-block', 'marginRight': '20px'}),
+                ], style={'flex': '1', 'marginRight': '16px'}),
                 html.Div([
-                    html.Label("Models:", style={'fontWeight': 'bold', 'marginRight': '10px'}),
+                    html.Label("Models", 
+                              style={
+                                  'fontWeight': '500', 
+                                  'marginBottom': '8px', 
+                                  'color': text_secondary,
+                                  'fontSize': '0.85em',
+                                  'textTransform': 'uppercase',
+                                  'letterSpacing': '0.5px'
+                              }),
                     dcc.Checklist(
                         id='model-checklist',
                         options=[],
                         value=[],
                         inline=True,
-                        style={'display': 'inline-block'}
+                        style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '12px'}
                     ),
-                ], style={'display': 'inline-block'}),
-            ], style={'marginBottom': '20px', 'padding': '15px', 'backgroundColor': '#ffffff',
-                     'borderRadius': '5px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
+                ], style={'flex': '2'}),
+            ], style={
+                'display': 'flex',
+                'marginBottom': '24px', 
+                'padding': '20px', 
+                'backgroundColor': card_dark,
+                'borderRadius': '12px', 
+                'border': f'1px solid {border_color}'
+            }),
+            
+            # Real-time statistics cards
+            html.Div(id='realtime-stats', style={'marginBottom': '24px'}),
             
             # Metrics summary cards
-            html.Div(id='summary-cards', style={'marginBottom': '20px'}),
+            html.Div(id='summary-cards', style={'marginBottom': '24px'}),
             
             # Main plots
             html.Div([
-                dcc.Graph(id='cumulative-metrics-plot', style={'height': '400px'}),
-            ], style={'marginBottom': '20px', 'padding': '15px', 'backgroundColor': '#ffffff',
-                     'borderRadius': '5px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
-            
-            html.Div([
-                dcc.Graph(id='window-metrics-plot', style={'height': '400px'}),
-            ], style={'marginBottom': '20px', 'padding': '15px', 'backgroundColor': '#ffffff',
-                     'borderRadius': '5px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
-            
-            # Drift events plot
-            html.Div([
-                dcc.Graph(id='drift-events-plot', style={'height': '300px'}),
-            ], style={'marginBottom': '20px', 'padding': '15px', 'backgroundColor': '#ffffff',
-                     'borderRadius': '5px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
+                html.Div([
+                    dcc.Graph(id='cumulative-metrics-plot', style={'height': '450px'}),
+                ], style={
+                    'marginBottom': '24px', 
+                    'padding': '20px', 
+                    'backgroundColor': card_dark,
+                    'borderRadius': '12px', 
+                    'border': f'1px solid {border_color}'
+                }),
+                
+                html.Div([
+                    dcc.Graph(id='window-metrics-plot', style={'height': '450px'}),
+                ], style={
+                    'marginBottom': '24px', 
+                    'padding': '20px', 
+                    'backgroundColor': card_dark,
+                    'borderRadius': '12px', 
+                    'border': f'1px solid {border_color}'
+                }),
+                
+                # Drift events plot
+                html.Div([
+                    dcc.Graph(id='drift-events-plot', style={'height': '350px'}),
+                ], style={
+                    'marginBottom': '24px', 
+                    'padding': '20px', 
+                    'backgroundColor': card_dark,
+                    'borderRadius': '12px', 
+                    'border': f'1px solid {border_color}'
+                }),
+            ]),
             
             # Data table
             html.Div([
-                html.H3("Latest Metrics", style={'marginBottom': '10px'}),
+                html.H3("Latest Metrics", 
+                       style={
+                           'marginBottom': '16px', 
+                           'color': text_primary,
+                           'fontSize': '1.3em',
+                           'fontWeight': '600',
+                           'borderBottom': f'2px solid {border_color}',
+                           'paddingBottom': '12px'
+                       }),
                 html.Div(id='metrics-table'),
-            ], style={'padding': '15px', 'backgroundColor': '#ffffff',
-                     'borderRadius': '5px', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
+            ], style={
+                'padding': '24px', 
+                'backgroundColor': card_dark,
+                'borderRadius': '12px', 
+                'border': f'1px solid {border_color}'
+            }),
             
             # Auto-refresh interval
             dcc.Interval(
                 id='interval-component',
-                interval=self.update_interval * 1000,  # Convert to milliseconds
+                interval=self.update_interval * 1000,
                 n_intervals=0
             ),
             
-            # Store for data
+            # Store for data and previous update time
             dcc.Store(id='metrics-store'),
-        ], style={'padding': '20px', 'backgroundColor': '#f8f9fa', 'fontFamily': 'Arial, sans-serif'})
+            dcc.Store(id='previous-update-time'),
+            dcc.Store(id='previous-instance-count'),
+        ], style={
+            'padding': '24px', 
+            'backgroundColor': bg_dark, 
+            'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            'minHeight': '100vh',
+            'color': text_primary
+        })
+    
+    def create_realtime_stats(self, df, previous_time=None, previous_instance_count=None):
+        """Create real-time statistics cards with dark mode."""
+        if df.empty:
+            return html.Div(
+                "No data available. Start running consumers with --log-file option.",
+                style={'color': '#b0b3b8', 'padding': '20px', 'textAlign': 'center'}
+            )
+        
+        # Dark mode colors
+        card_dark = '#1a1f2e'
+        text_primary = '#e4e6eb'
+        text_secondary = '#b0b3b8'
+        accent_blue = '#3b82f6'
+        accent_green = '#10b981'
+        accent_red = '#ef4444'
+        accent_purple = '#8b5cf6'
+        accent_orange = '#f59e0b'
+        border_color = '#2d3748'
+        
+        cards = []
+        
+        # Calculate total instances processed
+        total_instances = df['instance'].max() if 'instance' in df.columns else 0
+        
+        # Calculate processing rate (instances per second)
+        processing_rate = 0
+        if previous_time is not None and previous_instance_count is not None:
+            try:
+                time_diff = (datetime.now() - datetime.fromisoformat(previous_time)).total_seconds()
+                if time_diff > 0 and total_instances > previous_instance_count:
+                    instances_diff = total_instances - previous_instance_count
+                    processing_rate = instances_diff / time_diff
+            except:
+                pass
+        
+        # Count drift events
+        drift_count = 0
+        files = glob.glob(os.path.join(self.results_dir, '*_results.json'))
+        for filepath in files:
+            try:
+                with open(filepath, 'r') as f:
+                    results = json.load(f)
+                    if 'drift_details' in results:
+                        drift_count += len(results['drift_details'])
+            except:
+                pass
+        
+        # Calculate average accuracy/MAE across all models
+        latest_data = df.groupby(['dataset', 'task', 'model']).last().reset_index()
+        avg_accuracy = None
+        if not latest_data.empty:
+            class_data = latest_data[latest_data['task'] == 'classification']
+            if not class_data.empty and 'cumulative_accuracy' in class_data.columns:
+                acc_values = pd.to_numeric(class_data['cumulative_accuracy'].replace('N/A', None), errors='coerce')
+                if acc_values.notna().any():
+                    avg_accuracy = acc_values.mean()
+        
+        # Count active models
+        active_models = len(latest_data['model'].unique()) if not latest_data.empty else 0
+        
+        # Create stat cards
+        stat_cards = [
+            {
+                'title': 'Total Instances',
+                'value': f"{int(total_instances):,}",
+                'subtitle': 'Processed',
+                'color': accent_blue
+            },
+            {
+                'title': 'Processing Rate',
+                'value': f"{processing_rate:.1f}",
+                'subtitle': 'instances/sec',
+                'color': accent_green
+            },
+            {
+                'title': 'Drift Events',
+                'value': f"{drift_count}",
+                'subtitle': 'Detected',
+                'color': accent_red
+            },
+            {
+                'title': 'Avg Accuracy',
+                'value': f"{avg_accuracy:.3f}" if avg_accuracy is not None else "N/A",
+                'subtitle': 'Across Models',
+                'color': accent_purple
+            },
+            {
+                'title': 'Active Models',
+                'value': f"{active_models}",
+                'subtitle': 'Running',
+                'color': accent_orange
+            }
+        ]
+        
+        for stat in stat_cards:
+            cards.append(
+                html.Div([
+                    html.Div([
+                        html.H4(stat['title'], 
+                               style={
+                                   'margin': '0 0 12px 0', 
+                                   'color': text_secondary, 
+                                   'fontSize': '0.75em', 
+                                   'fontWeight': '600',
+                                   'textTransform': 'uppercase',
+                                   'letterSpacing': '0.5px'
+                               }),
+                        html.H2(stat['value'], 
+                               style={
+                                   'margin': '0 0 8px 0', 
+                                   'color': stat['color'],
+                                   'fontSize': '2.2em',
+                                   'fontWeight': '700',
+                                   'letterSpacing': '-0.5px'
+                               }),
+                        html.P(stat['subtitle'], 
+                              style={
+                                  'margin': '0', 
+                                  'color': text_secondary, 
+                                  'fontSize': '0.85em',
+                                  'fontWeight': '400'
+                              }),
+                    ], style={'textAlign': 'left'})
+                ], style={
+                    'backgroundColor': card_dark,
+                    'padding': '24px',
+                    'borderRadius': '12px',
+                    'textAlign': 'left',
+                    'flex': '1',
+                    'margin': '0 8px',
+                    'borderLeft': f'4px solid {stat["color"]}',
+                    'border': f'1px solid {border_color}',
+                    'minWidth': '180px'
+                })
+            )
+        
+        return html.Div(cards, style={'display': 'flex', 'justifyContent': 'space-between', 'flexWrap': 'wrap', 'gap': '16px'})
     
     def create_summary_cards(self, df):
-        """Create summary metric cards."""
+        """Create summary metric cards with dark mode."""
         if df.empty:
-            return html.Div("No data available. Start running consumers with --log-file option.")
+            return html.Div(
+                "No data available. Start running consumers with --log-file option.",
+                style={'color': '#b0b3b8', 'padding': '20px', 'textAlign': 'center'}
+            )
+        
+        # Dark mode colors
+        card_dark = '#1a1f2e'
+        text_primary = '#e4e6eb'
+        text_secondary = '#b0b3b8'
+        accent_green = '#10b981'
+        accent_red = '#ef4444'
+        border_color = '#2d3748'
         
         cards = []
         
@@ -225,162 +657,313 @@ class MetricsDashboard:
             best_row = task_data.loc[best_idx]
             best_value = best_row[metric_col]
             
+            color = accent_green if task_type == 'classification' else accent_red
+            
             cards.append(
                 html.Div([
                     html.H4(f"{task_type.capitalize()} - Best {metric_name}", 
-                           style={'margin': '0', 'color': '#2c3e50'}),
+                           style={
+                               'margin': '0 0 12px 0', 
+                               'color': text_secondary, 
+                               'fontSize': '0.75em', 
+                               'fontWeight': '600',
+                               'textTransform': 'uppercase',
+                               'letterSpacing': '0.5px'
+                           }),
                     html.P(f"{best_row['model']} on {best_row['dataset']}", 
-                          style={'margin': '5px 0', 'color': '#7f8c8d', 'fontSize': '14px'}),
+                          style={
+                              'margin': '0 0 16px 0', 
+                              'color': text_secondary, 
+                              'fontSize': '0.9em',
+                              'fontWeight': '400'
+                          }),
                     html.H2(f"{best_value:.4f}" if best_value != 'N/A' else 'N/A', 
-                           style={'margin': '10px 0', 'color': '#27ae60' if task_type == 'classification' else '#e74c3c'}),
+                           style={
+                               'margin': '0', 
+                               'color': color,
+                               'fontSize': '2.4em',
+                               'fontWeight': '700',
+                               'letterSpacing': '-0.5px'
+                           }),
                 ], style={
-                    'backgroundColor': '#ffffff',
-                    'padding': '20px',
-                    'borderRadius': '5px',
-                    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
-                    'textAlign': 'center',
+                    'backgroundColor': card_dark,
+                    'padding': '24px',
+                    'borderRadius': '12px',
+                    'textAlign': 'left',
                     'flex': '1',
-                    'margin': '0 10px'
+                    'margin': '0 8px',
+                    'borderLeft': f'4px solid {color}',
+                    'border': f'1px solid {border_color}',
+                    'minWidth': '280px'
                 })
             )
         
         if not cards:
-            return html.Div("No metrics available yet.")
+            return html.Div(
+                "No metrics available yet.",
+                style={'color': '#b0b3b8', 'padding': '20px', 'textAlign': 'center'}
+            )
         
-        return html.Div(cards, style={'display': 'flex', 'justifyContent': 'space-around'})
+        return html.Div(cards, style={'display': 'flex', 'justifyContent': 'space-between', 'flexWrap': 'wrap', 'gap': '16px'})
     
     def create_cumulative_plot(self, df, selected_models):
-        """Create cumulative metrics plot."""
+        """Create cumulative metrics plot with improved styling."""
         if df.empty:
-            return {'data': [], 'layout': {'title': 'No data available'}}
+            return {
+                'data': [], 
+                'layout': {
+                    'title': {'text': 'No data available', 'font': {'size': 18}},
+                    'template': 'plotly_white'
+                }
+            }
         
         filtered_df = df[df['model'].isin(selected_models)] if selected_models else df
         
         traces = []
+        colors = px.colors.qualitative.Set3
         
         # Classification plots
         class_df = filtered_df[filtered_df['task'] == 'classification']
         if not class_df.empty and 'cumulative_accuracy' in class_df.columns:
-            for (dataset, model), group in class_df.groupby(['dataset', 'model']):
+            for idx, ((dataset, model), group) in enumerate(class_df.groupby(['dataset', 'model'])):
                 group = group.copy()
                 group['cumulative_accuracy'] = pd.to_numeric(
                     group['cumulative_accuracy'].replace('N/A', None), errors='coerce'
                 )
                 group = group.dropna(subset=['cumulative_accuracy'])
+                group = group.sort_values('instance')
                 
                 if not group.empty:
+                    color = colors[idx % len(colors)]
+                    # Convert hex to rgba for fill
+                    def hex_to_rgba(hex_color, alpha):
+                        hex_color = hex_color.lstrip('#')
+                        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                        return f'rgba({r}, {g}, {b}, {alpha})'
                     traces.append(go.Scatter(
                         x=group['instance'],
                         y=group['cumulative_accuracy'],
                         mode='lines+markers',
-                        name=f"{model} ({dataset}) - Accuracy",
-                        line=dict(width=2),
-                        marker=dict(size=4)
+                        name=f"{model} ({dataset})",
+                        line=dict(width=3, color=color),
+                        marker=dict(size=5, color=color, line=dict(width=1, color='white')),
+                        hovertemplate='<b>%{fullData.name}</b><br>' +
+                                     'Instance: %{x:,}<br>' +
+                                     'Accuracy: %{y:.4f}<extra></extra>',
+                        fill='tonexty' if idx > 0 else None,
+                        fillcolor=hex_to_rgba(color, 0.1) if idx > 0 else None
                     ))
         
         # Regression plots
         reg_df = filtered_df[filtered_df['task'] == 'regression']
         if not reg_df.empty and 'cumulative_mae' in reg_df.columns:
-            for (dataset, model), group in reg_df.groupby(['dataset', 'model']):
+            for idx, ((dataset, model), group) in enumerate(reg_df.groupby(['dataset', 'model'])):
                 group = group.copy()
                 group['cumulative_mae'] = pd.to_numeric(
                     group['cumulative_mae'].replace('N/A', None), errors='coerce'
                 )
                 group = group.dropna(subset=['cumulative_mae'])
+                group = group.sort_values('instance')
                 
                 if not group.empty:
+                    color = colors[(idx + len(class_df.groupby(['dataset', 'model']))) % len(colors)]
                     traces.append(go.Scatter(
                         x=group['instance'],
                         y=group['cumulative_mae'],
                         mode='lines+markers',
                         name=f"{model} ({dataset}) - MAE",
-                        line=dict(width=2),
-                        marker=dict(size=4),
+                        line=dict(width=3, color=color, dash='dash'),
+                        marker=dict(size=5, color=color, line=dict(width=1, color='white')),
+                        hovertemplate='<b>%{fullData.name}</b><br>' +
+                                     'Instance: %{x:,}<br>' +
+                                     'MAE: %{y:.4f}<extra></extra>',
                         yaxis='y2'
                     ))
         
         layout = go.Layout(
-            title='Cumulative Metrics Over Time',
-            xaxis=dict(title='Instance Number'),
-            yaxis=dict(title='Cumulative Accuracy', side='left', 
-                      range=[0, 1] if class_df.empty else None),
-            yaxis2=dict(title='Cumulative MAE', side='right', overlaying='y',
-                       range=[0, None] if reg_df.empty else None),
-            hovermode='closest',
-            legend=dict(x=1.05, y=1),
-            template='plotly_white'
+            title={
+                'text': 'Cumulative Metrics Over Time',
+                'font': {'size': 18, 'color': '#e4e6eb'},
+                'x': 0.5,
+                'xanchor': 'center'
+            },
+            xaxis=dict(
+                title=dict(text='Instance Number', font=dict(size=13, color='#b0b3b8')),
+                gridcolor='rgba(255,255,255,0.05)',
+                showgrid=True,
+                zeroline=False,
+                color='#b0b3b8'
+            ),
+            yaxis=dict(
+                title=dict(text='Cumulative Accuracy', font=dict(size=13, color='#b0b3b8')),
+                side='left',
+                range=[0, 1] if not class_df.empty else None,
+                gridcolor='rgba(255,255,255,0.05)',
+                showgrid=True,
+                zeroline=False,
+                color='#b0b3b8'
+            ),
+            yaxis2=dict(
+                title=dict(text='Cumulative MAE', font=dict(size=13, color='#b0b3b8')),
+                side='right',
+                overlaying='y',
+                range=[0, None] if not reg_df.empty else None,
+                gridcolor='rgba(255,255,255,0.02)',
+                showgrid=False,
+                color='#b0b3b8'
+            ),
+            hovermode='x unified',
+            legend=dict(
+                x=1.02,
+                y=1,
+                bgcolor='rgba(26, 31, 46, 0.95)',
+                bordercolor='rgba(255,255,255,0.1)',
+                borderwidth=1,
+                font=dict(color='#e4e6eb', size=11)
+            ),
+            template='plotly_dark',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=60, r=100, t=50, b=60),
+            font=dict(color='#e4e6eb')
         )
         
         return {'data': traces, 'layout': layout}
     
     def create_window_plot(self, df, selected_models):
-        """Create window/rolling metrics plot."""
+        """Create window/rolling metrics plot with improved styling."""
         if df.empty:
-            return {'data': [], 'layout': {'title': 'No data available'}}
+            return {
+                'data': [], 
+                'layout': {
+                    'title': {'text': 'No data available', 'font': {'size': 18}},
+                    'template': 'plotly_white'
+                }
+            }
         
         filtered_df = df[df['model'].isin(selected_models)] if selected_models else df
         
         traces = []
+        colors = px.colors.qualitative.Set3
         
         # Classification plots
         class_df = filtered_df[filtered_df['task'] == 'classification']
         if not class_df.empty and 'window_accuracy' in class_df.columns:
-            for (dataset, model), group in class_df.groupby(['dataset', 'model']):
+            for idx, ((dataset, model), group) in enumerate(class_df.groupby(['dataset', 'model'])):
                 group = group.copy()
                 group['window_accuracy'] = pd.to_numeric(
                     group['window_accuracy'].replace('N/A', None), errors='coerce'
                 )
                 group = group.dropna(subset=['window_accuracy'])
+                group = group.sort_values('instance')
                 
                 if not group.empty:
+                    color = colors[idx % len(colors)]
+                    # Convert hex to rgba for fill
+                    def hex_to_rgba(hex_color, alpha):
+                        hex_color = hex_color.lstrip('#')
+                        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                        return f'rgba({r}, {g}, {b}, {alpha})'
                     traces.append(go.Scatter(
                         x=group['instance'],
                         y=group['window_accuracy'],
                         mode='lines+markers',
-                        name=f"{model} ({dataset}) - Window Accuracy",
-                        line=dict(width=2),
-                        marker=dict(size=4)
+                        name=f"{model} ({dataset})",
+                        line=dict(width=2.5, color=color),
+                        marker=dict(size=4, color=color, line=dict(width=0.5, color='white')),
+                        hovertemplate='<b>%{fullData.name}</b><br>' +
+                                     'Instance: %{x:,}<br>' +
+                                     'Window Accuracy: %{y:.4f}<extra></extra>',
+                        fill='tonexty' if idx > 0 else None,
+                        fillcolor=hex_to_rgba(color, 0.15) if idx > 0 else None
                     ))
         
         # Regression plots
         reg_df = filtered_df[filtered_df['task'] == 'regression']
         if not reg_df.empty and 'window_mae' in reg_df.columns:
-            for (dataset, model), group in reg_df.groupby(['dataset', 'model']):
+            for idx, ((dataset, model), group) in enumerate(reg_df.groupby(['dataset', 'model'])):
                 group = group.copy()
                 group['window_mae'] = pd.to_numeric(
                     group['window_mae'].replace('N/A', None), errors='coerce'
                 )
                 group = group.dropna(subset=['window_mae'])
+                group = group.sort_values('instance')
                 
                 if not group.empty:
+                    color = colors[(idx + len(class_df.groupby(['dataset', 'model']))) % len(colors)]
                     traces.append(go.Scatter(
                         x=group['instance'],
                         y=group['window_mae'],
                         mode='lines+markers',
                         name=f"{model} ({dataset}) - Window MAE",
-                        line=dict(width=2),
-                        marker=dict(size=4),
+                        line=dict(width=2.5, color=color, dash='dash'),
+                        marker=dict(size=4, color=color, line=dict(width=0.5, color='white')),
+                        hovertemplate='<b>%{fullData.name}</b><br>' +
+                                     'Instance: %{x:,}<br>' +
+                                     'Window MAE: %{y:.4f}<extra></extra>',
                         yaxis='y2'
                     ))
         
         layout = go.Layout(
-            title='Rolling Window Metrics (Last 1000 instances)',
-            xaxis=dict(title='Instance Number'),
-            yaxis=dict(title='Window Accuracy', side='left',
-                      range=[0, 1] if class_df.empty else None),
-            yaxis2=dict(title='Window MAE', side='right', overlaying='y',
-                       range=[0, None] if reg_df.empty else None),
-            hovermode='closest',
-            legend=dict(x=1.05, y=1),
-            template='plotly_white'
+            title={
+                'text': 'Rolling Window Metrics (Last 1000 instances)',
+                'font': {'size': 18, 'color': '#e4e6eb'},
+                'x': 0.5,
+                'xanchor': 'center'
+            },
+            xaxis=dict(
+                title=dict(text='Instance Number', font=dict(size=13, color='#b0b3b8')),
+                gridcolor='rgba(255,255,255,0.05)',
+                showgrid=True,
+                zeroline=False,
+                color='#b0b3b8'
+            ),
+            yaxis=dict(
+                title=dict(text='Window Accuracy', font=dict(size=13, color='#b0b3b8')),
+                side='left',
+                range=[0, 1] if not class_df.empty else None,
+                gridcolor='rgba(255,255,255,0.05)',
+                showgrid=True,
+                zeroline=False,
+                color='#b0b3b8'
+            ),
+            yaxis2=dict(
+                title=dict(text='Window MAE', font=dict(size=13, color='#b0b3b8')),
+                side='right',
+                overlaying='y',
+                range=[0, None] if not reg_df.empty else None,
+                gridcolor='rgba(255,255,255,0.02)',
+                showgrid=False,
+                color='#b0b3b8'
+            ),
+            hovermode='x unified',
+            legend=dict(
+                x=1.02,
+                y=1,
+                bgcolor='rgba(26, 31, 46, 0.95)',
+                bordercolor='rgba(255,255,255,0.1)',
+                borderwidth=1,
+                font=dict(color='#e4e6eb', size=11)
+            ),
+            template='plotly_dark',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=60, r=100, t=50, b=60),
+            font=dict(color='#e4e6eb')
         )
         
         return {'data': traces, 'layout': layout}
     
     def create_drift_plot(self, df, selected_models):
-        """Create drift events visualization."""
+        """Create drift events visualization with improved styling."""
         if df.empty:
-            return {'data': [], 'layout': {'title': 'No data available'}}
+            return {
+                'data': [], 
+                'layout': {
+                    'title': {'text': 'No data available', 'font': {'size': 18}},
+                    'template': 'plotly_white'
+                }
+            }
         
         # Try to load drift events from JSON results files
         traces = []
@@ -407,34 +990,88 @@ class MetricsDashboard:
                 pass
         
         if not drift_data:
-            return {'data': [], 'layout': {'title': 'No drift events detected yet'}}
+            return {
+                'data': [], 
+                'layout': {
+                    'title': {
+                        'text': 'No drift events detected yet',
+                        'font': {'size': 18, 'color': '#e4e6eb'}
+                    },
+                    'template': 'plotly_dark',
+                    'plot_bgcolor': 'rgba(0,0,0,0)',
+                    'paper_bgcolor': 'rgba(0,0,0,0)',
+                    'font': dict(color='#e4e6eb')
+                }
+            }
         
         drift_df = pd.DataFrame(drift_data)
+        colors = px.colors.qualitative.Set3
         
-        for model in drift_df['model'].unique():
+        for idx, model in enumerate(drift_df['model'].unique()):
             model_drifts = drift_df[drift_df['model'] == model]
+            color = colors[idx % len(colors)]
             traces.append(go.Scatter(
                 x=model_drifts['instance'],
                 y=[model] * len(model_drifts),
                 mode='markers',
                 name=model,
-                marker=dict(size=10, symbol='triangle-down', color='red')
+                marker=dict(
+                    size=15, 
+                    symbol='triangle-down', 
+                    color=color,
+                    line=dict(width=2, color='white')
+                ),
+                hovertemplate='<b>%{fullData.name}</b><br>' +
+                             'Instance: %{x:,}<br>' +
+                             'Drift Detected<extra></extra>'
             ))
         
         layout = go.Layout(
-            title='Concept Drift Events',
-            xaxis=dict(title='Instance Number'),
-            yaxis=dict(title='Model'),
+            title={
+                'text': 'Concept Drift Events',
+                'font': {'size': 18, 'color': '#e4e6eb'},
+                'x': 0.5,
+                'xanchor': 'center'
+            },
+            xaxis=dict(
+                title=dict(text='Instance Number', font=dict(size=13, color='#b0b3b8')),
+                gridcolor='rgba(255,255,255,0.05)',
+                showgrid=True,
+                zeroline=False,
+                color='#b0b3b8'
+            ),
+            yaxis=dict(
+                title=dict(text='Model', font=dict(size=13, color='#b0b3b8')),
+                gridcolor='rgba(255,255,255,0.05)',
+                showgrid=True,
+                zeroline=False,
+                color='#b0b3b8'
+            ),
             hovermode='closest',
-            template='plotly_white'
+            legend=dict(
+                x=1.02,
+                y=1,
+                bgcolor='rgba(26, 31, 46, 0.95)',
+                bordercolor='rgba(255,255,255,0.1)',
+                borderwidth=1,
+                font=dict(color='#e4e6eb', size=11)
+            ),
+            template='plotly_dark',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=60, r=100, t=50, b=60),
+            font=dict(color='#e4e6eb')
         )
         
         return {'data': traces, 'layout': layout}
     
     def create_metrics_table(self, df):
-        """Create metrics data table."""
+        """Create metrics data table with dark mode."""
         if df.empty:
-            return html.Div("No data available.")
+            return html.Div(
+                "No data available.",
+                style={'color': '#b0b3b8', 'padding': '20px', 'textAlign': 'center'}
+            )
         
         # Get latest metrics for each model
         latest = df.groupby(['dataset', 'task', 'model']).last().reset_index()
@@ -468,25 +1105,57 @@ class MetricsDashboard:
                 })
         
         if not table_data:
-            return html.Div("No metrics available.")
+            return html.Div(
+                "No metrics available.",
+                style={'color': '#b0b3b8', 'padding': '20px', 'textAlign': 'center'}
+            )
         
         table_df = pd.DataFrame(table_data)
+        
+        # Dark mode colors
+        card_dark = '#1a1f2e'
+        text_primary = '#e4e6eb'
+        text_secondary = '#b0b3b8'
+        border_color = '#2d3748'
+        header_bg = '#2d3748'
         
         return html.Div([
             html.Table([
                 html.Thead([
-                    html.Tr([html.Th(col, style={'padding': '10px', 'border': '1px solid #ddd', 
-                                                'backgroundColor': '#3498db', 'color': 'white'}) 
-                            for col in table_df.columns])
+                    html.Tr([html.Th(col, style={
+                        'padding': '12px 16px', 
+                        'border': f'1px solid {border_color}', 
+                        'backgroundColor': header_bg, 
+                        'color': text_primary,
+                        'fontWeight': '600',
+                        'fontSize': '0.85em',
+                        'textTransform': 'uppercase',
+                        'letterSpacing': '0.5px',
+                        'textAlign': 'left'
+                    }) 
+                    for col in table_df.columns])
                 ]),
                 html.Tbody([
                     html.Tr([
-                        html.Td(table_df.iloc[i][col], style={'padding': '10px', 'border': '1px solid #ddd'}) 
+                        html.Td(table_df.iloc[i][col], style={
+                            'padding': '12px 16px', 
+                            'border': f'1px solid {border_color}',
+                            'color': text_primary,
+                            'fontSize': '0.9em'
+                        }) 
                         for col in table_df.columns
-                    ], style={'backgroundColor': '#f2f2f2' if i % 2 == 0 else 'white'}) 
+                    ], style={
+                        'backgroundColor': card_dark if i % 2 == 0 else '#1f2533'
+                    }) 
                     for i in range(len(table_df))
                 ])
-            ], style={'width': '100%', 'borderCollapse': 'collapse', 'fontSize': '14px'})
+            ], style={
+                'width': '100%', 
+                'borderCollapse': 'collapse', 
+                'fontSize': '14px',
+                'borderRadius': '8px',
+                'overflow': 'hidden'
+            })
         ], style={'overflowX': 'auto'})
     
     def setup_callbacks(self):
@@ -495,14 +1164,18 @@ class MetricsDashboard:
         @self.app.callback(
             [Output('metrics-store', 'data'),
              Output('last-update-time', 'children'),
+             Output('previous-update-time', 'data'),
+             Output('previous-instance-count', 'data'),
              Output('dataset-filter', 'options'),
              Output('model-checklist', 'options')],
             [Input('interval-component', 'n_intervals'),
              Input('refresh-button', 'n_clicks'),
              Input('refresh-interval', 'value')],
-            [State('task-filter', 'value')]
+            [State('task-filter', 'value'),
+             State('previous-update-time', 'data'),
+             State('previous-instance-count', 'data')]
         )
-        def update_data(n_intervals, n_clicks, refresh_interval, task_filter):
+        def update_data(n_intervals, n_clicks, refresh_interval, task_filter, previous_time, previous_instance_count):
             """Update metrics data."""
             df = self.load_all_metrics()
             
@@ -525,8 +1198,14 @@ class MetricsDashboard:
             data_json = df.to_dict('records') if not df.empty else []
             
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            previous_timestamp = previous_time if previous_time else timestamp
             
-            return data_json, timestamp, dataset_options, model_options
+            # Get current max instance count - this will be the "previous" for next update
+            current_instance_count = df['instance'].max() if not df.empty and 'instance' in df.columns else 0
+            # Store current as previous for next callback
+            new_previous_count = current_instance_count
+            
+            return data_json, timestamp, previous_timestamp, new_previous_count, dataset_options, model_options
         
         @self.app.callback(
             Output('interval-component', 'interval'),
@@ -537,13 +1216,32 @@ class MetricsDashboard:
             return (interval or self.update_interval) * 1000
         
         @self.app.callback(
+            Output('realtime-stats', 'children'),
+            [Input('metrics-store', 'data')],
+            [State('previous-update-time', 'data'),
+             State('previous-instance-count', 'data')]
+        )
+        def update_realtime_stats(data, previous_time, previous_instance_count):
+            """Update real-time statistics."""
+            if not data:
+                return html.Div(
+                    "No data available.",
+                    style={'color': '#b0b3b8', 'padding': '20px', 'textAlign': 'center'}
+                )
+            df = pd.DataFrame(data)
+            return self.create_realtime_stats(df, previous_time, previous_instance_count)
+        
+        @self.app.callback(
             Output('summary-cards', 'children'),
             [Input('metrics-store', 'data')]
         )
         def update_summary_cards(data):
             """Update summary cards."""
             if not data:
-                return html.Div("No data available.")
+                return html.Div(
+                    "No data available.",
+                    style={'color': '#b0b3b8', 'padding': '20px', 'textAlign': 'center'}
+                )
             df = pd.DataFrame(data)
             return self.create_summary_cards(df)
         
@@ -556,7 +1254,16 @@ class MetricsDashboard:
         def update_cumulative_plot(data, selected_models, selected_dataset):
             """Update cumulative metrics plot."""
             if not data:
-                return {'data': [], 'layout': {'title': 'No data available'}}
+                return {
+                    'data': [], 
+                    'layout': {
+                        'title': {'text': 'No data available', 'font': {'size': 18, 'color': '#e4e6eb'}},
+                        'template': 'plotly_dark',
+                        'plot_bgcolor': 'rgba(0,0,0,0)',
+                        'paper_bgcolor': 'rgba(0,0,0,0)',
+                        'font': dict(color='#e4e6eb')
+                    }
+                }
             df = pd.DataFrame(data)
             if selected_dataset and selected_dataset != 'all':
                 df = df[df['dataset'] == selected_dataset]
@@ -571,7 +1278,16 @@ class MetricsDashboard:
         def update_window_plot(data, selected_models, selected_dataset):
             """Update window metrics plot."""
             if not data:
-                return {'data': [], 'layout': {'title': 'No data available'}}
+                return {
+                    'data': [], 
+                    'layout': {
+                        'title': {'text': 'No data available', 'font': {'size': 18, 'color': '#e4e6eb'}},
+                        'template': 'plotly_dark',
+                        'plot_bgcolor': 'rgba(0,0,0,0)',
+                        'paper_bgcolor': 'rgba(0,0,0,0)',
+                        'font': dict(color='#e4e6eb')
+                    }
+                }
             df = pd.DataFrame(data)
             if selected_dataset and selected_dataset != 'all':
                 df = df[df['dataset'] == selected_dataset]
@@ -585,7 +1301,16 @@ class MetricsDashboard:
         def update_drift_plot(data, selected_models):
             """Update drift events plot."""
             if not data:
-                return {'data': [], 'layout': {'title': 'No data available'}}
+                return {
+                    'data': [], 
+                    'layout': {
+                        'title': {'text': 'No data available', 'font': {'size': 18, 'color': '#e4e6eb'}},
+                        'template': 'plotly_dark',
+                        'plot_bgcolor': 'rgba(0,0,0,0)',
+                        'paper_bgcolor': 'rgba(0,0,0,0)',
+                        'font': dict(color='#e4e6eb')
+                    }
+                }
             df = pd.DataFrame(data)
             return self.create_drift_plot(df, selected_models)
         
@@ -597,7 +1322,10 @@ class MetricsDashboard:
         def update_metrics_table(data, selected_dataset):
             """Update metrics table."""
             if not data:
-                return html.Div("No data available.")
+                return html.Div(
+                    "No data available.",
+                    style={'color': '#b0b3b8', 'padding': '20px', 'textAlign': 'center'}
+                )
             df = pd.DataFrame(data)
             if selected_dataset and selected_dataset != 'all':
                 df = df[df['dataset'] == selected_dataset]
