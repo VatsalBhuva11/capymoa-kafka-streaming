@@ -70,7 +70,16 @@ def stream_electricity_dataset(producer, topic_name, stream_rate=0.1, inject_dri
             
             # Extract features and label
             features = instance.x
-            label = instance.y
+            # Try to get label - CapyMOA instances may use y_index or y_label
+            try:
+                label = instance.y_index if hasattr(instance, 'y_index') else instance.y
+            except:
+                label = instance.y
+            
+            # Debug: Check label values for first few instances
+            if instance_count <= 10:
+                label_str = instance.y_label if hasattr(instance, 'y_label') else 'N/A'
+                print(f"PRODUCER DEBUG Instance {instance_count}: label={label} (type: {type(label).__name__}), y_label={label_str}, y_index={instance.y_index if hasattr(instance, 'y_index') else 'N/A'}")
             
             # Swap labels if drift is injected
             if inject_drift and drift_triggered:

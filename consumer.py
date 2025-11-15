@@ -245,6 +245,10 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
             features = np.array(data['features'])
             label = int(data['label'])
             
+            # Debug: Check what we're receiving from Kafka
+            if instance_count <= 10 or (instance_count % 1000 == 0 and instance_count <= 2000):
+                print(f"CONSUMER RECEIVED Instance {instance_count}: label={label} from Kafka message, instance_id={data.get('instance_id', 'N/A')}")
+            
             # Preprocess
             processed_features = preprocessor.preprocess(features)
             
@@ -255,12 +259,24 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
             
             # Test-then-train evaluation
             prediction = model.predict(instance)
+            
+            # Debug: Check prediction and label for first few instances and periodically
+            if instance_count <= 10 or (instance_count % 1000 == 0 and instance_count <= 2000):
+                print(f"DEBUG Instance {instance_count}: prediction={prediction} (type: {type(prediction).__name__}), label={label} (type: {type(label).__name__}), match={prediction == label}")
+            
             # Use label variable (from Kafka message) instead of accessing instance.y
             evaluator.update(label, prediction)
             
             # Update metrics
-            is_correct = int(prediction == label)
-            metrics.update(prediction, label, error=1.0 - is_correct)
+            # Ensure both are same type for comparison
+            pred_val = prediction
+            label_val = label
+            # Convert to int if both are numeric
+            if isinstance(prediction, (int, float, np.integer, np.floating)) and isinstance(label, (int, float, np.integer, np.floating)):
+                pred_val = int(prediction)
+                label_val = int(label)
+            is_correct = int(pred_val == label_val)
+            metrics.update(pred_val, label_val, error=1.0 - is_correct)
             
             # Drift detection on prediction error
             if drift_detector is not None:
@@ -282,10 +298,22 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
                 win_acc = metrics.get_window_accuracy()
                 win_acc_str = f"{win_acc:.4f}" if win_acc is not None else "N/A"
                 cum_acc_str = f"{cum_acc:.4f}" if cum_acc is not None else "N/A"
-                print(f"Instance {instance_count:6d} | "
-                      f"Cumulative Acc: {cum_acc_str} | "
-                      f"Window Acc: {win_acc_str:>6} | "
-                      f"Drifts: {len(metrics.drift_events)}")
+                
+                # Debug: Check prediction diversity in window
+                if len(metrics.window_predictions) > 0:
+                    unique_preds = len(set(metrics.window_predictions))
+                    unique_actuals = len(set(metrics.window_actuals))
+                    print(f"Instance {instance_count:6d} | "
+                          f"Cumulative Acc: {cum_acc_str} | "
+                          f"Window Acc: {win_acc_str:>6} | "
+                          f"Drifts: {len(metrics.drift_events)} | "
+                          f"Unique preds: {unique_preds}/{len(metrics.window_predictions)}, "
+                          f"Unique actuals: {unique_actuals}/{len(metrics.window_actuals)}")
+                else:
+                    print(f"Instance {instance_count:6d} | "
+                          f"Cumulative Acc: {cum_acc_str} | "
+                          f"Window Acc: {win_acc_str:>6} | "
+                          f"Drifts: {len(metrics.drift_events)}")
                 last_log_time = time.time()
                 
                 # Write to log file
@@ -461,9 +489,11 @@ def main():
         consumer = KafkaConsumer(
             args.topic,
             bootstrap_servers=args.bootstrap_servers,
-            auto_offset_reset='earliest',
+            auto_offset_reset='latest',  # Start from latest messages, not old ones
             value_deserializer=lambda x: json.loads(x.decode('utf-8')),
-            consumer_timeout_ms=30000  # Wait 30 seconds for new messages before timing out
+            consumer_timeout_ms=30000,  # Wait 30 seconds for new messages before timing out
+            enable_auto_commit=True,
+            group_id='ml-consumer-group'  # Use consumer group to track offsets
         )
         print(f"Connected to Kafka at {args.bootstrap_servers}")
         print(f"Consuming from topic: {args.topic}")
