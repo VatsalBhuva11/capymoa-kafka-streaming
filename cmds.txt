@@ -1,0 +1,16 @@
+# regression
+python producer.py --dataset bike --stream-rate 0.01
+
+# sgd
+python consumer.py --topic ml-stream-bike --task regression --model sgd --log-file results/bike_regression_sgd_metrics.csv
+
+# fimtdd
+python consumer.py --topic ml-stream-bike --task regression --model fimtdd --log-file results/bike_regression_fimtdd_metrics.csv
+
+
+
+# classification
+python producer.py --dataset electricity --stream-rate 0.01
+
+# hoeffding_tree
+python consumer.py --topic ml-stream-electricity --task classification --model hoeffding_tree --log-file results/electricity_classification_hoeffding_tree_metrics.csv

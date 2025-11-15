@@ -3,7 +3,10 @@ Kafka Consumer for online learning with CapyMOA.
 Handles preprocessing, online model training, evaluation, and concept drift detection.
 """
 from kafka import KafkaConsumer
-from capymoa.classifier import HoeffdingTree, AdaptiveRandomForestClassifier, KNN
+from capymoa.classifier import (
+    HoeffdingTree, AdaptiveRandomForestClassifier, KNN,
+    SGDClassifier, PassiveAggressiveClassifier
+)
 from capymoa.regressor import FIMTDD, AdaptiveRandomForestRegressor, KNNRegressor, SGDRegressor
 from capymoa.evaluation import ClassificationEvaluator, RegressionEvaluator
 from river.drift import ADWIN
@@ -225,6 +228,17 @@ def create_classifier(model_name, schema):
         return AdaptiveRandomForestClassifier(schema=schema, ensemble_size=10)
     elif model_name == 'knn':
         return KNN(schema=schema, k=5)
+    elif model_name == 'sgd':
+        # CapyMOA's SGDClassifier (sklearn-based, wraps sklearn's SGDClassifier)
+        return SGDClassifier(schema=schema)
+    elif model_name == 'passive_aggressive':
+        # CapyMOA's PassiveAggressiveClassifier (sklearn-based, wraps sklearn's PassiveAggressiveClassifier)
+        return PassiveAggressiveClassifier(schema=schema)
+    elif model_name == 'perceptron':
+        # CapyMOA doesn't have built-in Perceptron
+        # Use SGDClassifier as a close alternative (SGD with perceptron loss)
+        # This provides similar functionality to sklearn's Perceptron
+        return SGDClassifier(schema=schema)
     else:
         raise ValueError(f"Unknown classifier: {model_name}")
 
@@ -370,9 +384,7 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
                     print(f"Instance {instance_count:6d} | "
                           f"Cumulative Acc: {cum_acc_str} | "
                           f"Window Acc: {win_acc_str:>6} | "
-                          f"Drifts: {len(metrics.drift_events)} | "
-                          f"Unique preds: {unique_preds}/{len(metrics.window_predictions)}, "
-                          f"Unique actuals: {unique_actuals}/{len(metrics.window_actuals)}")
+                          f"Drifts: {len(metrics.drift_events)}")
                 else:
                     print(f"Instance {instance_count:6d} | "
                           f"Cumulative Acc: {cum_acc_str} | "
@@ -554,7 +566,8 @@ def main():
     parser.add_argument('--task', type=str, choices=['classification', 'regression'],
                        required=True, help='Task type')
     parser.add_argument('--model', type=str, 
-                       choices=['hoeffding_tree', 'arf', 'knn', 'fimtdd', 'sgd'],
+                       choices=['hoeffding_tree', 'arf', 'knn', 'fimtdd', 'sgd', 
+                               'passive_aggressive', 'perceptron'],
                        default='hoeffding_tree',
                        help='Model to use')
     parser.add_argument('--no-drift-detection', action='store_true',
@@ -569,12 +582,19 @@ def main():
     args = parser.parse_args()
     
     # Validate model for task
-    if args.task == 'classification' and args.model in ['fimtdd', 'sgd']:
+    if args.task == 'classification' and args.model == 'fimtdd':
         print(f"Error: {args.model} is a regressor, not a classifier")
         sys.exit(1)
-    if args.task == 'regression' and args.model in ['hoeffding_tree']:
+    if args.task == 'regression' and args.model in ['hoeffding_tree', 'passive_aggressive', 'perceptron']:
         print(f"Error: {args.model} is a classifier, not a regressor")
         sys.exit(1)
+    # Note: 'sgd' can be used for both classification and regression
+    if args.task == 'classification' and args.model == 'sgd':
+        # For classification, use SGDClassifier
+        pass
+    elif args.task == 'regression' and args.model == 'sgd':
+        # For regression, use SGDRegressor
+        pass
     
     # Initialize Kafka consumer
     try:
