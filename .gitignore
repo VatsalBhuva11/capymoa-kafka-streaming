@@ -34,7 +34,6 @@ ENV/
 
 # Project specific
 experiment_results.json
-results/
 *.log
 *.pkl
 *.h5

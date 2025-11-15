@@ -1,0 +1,93 @@
+{
+  "total_instances": 41665,
+  "drift_events": 17,
+  "drift_details": [
+    {
+      "instance_id": 3168,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:47:06.980563"
+    },
+    {
+      "instance_id": 5280,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:47:29.234530"
+    },
+    {
+      "instance_id": 7904,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:47:56.843131"
+    },
+    {
+      "instance_id": 10720,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:48:26.365442"
+    },
+    {
+      "instance_id": 13184,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:48:52.195355"
+    },
+    {
+      "instance_id": 15328,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:49:14.672145"
+    },
+    {
+      "instance_id": 17504,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:49:37.580304"
+    },
+    {
+      "instance_id": 19552,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:49:59.146661"
+    },
+    {
+      "instance_id": 22048,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:50:25.345789"
+    },
+    {
+      "instance_id": 24864,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:50:54.997513"
+    },
+    {
+      "instance_id": 27360,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:51:21.442231"
+    },
+    {
+      "instance_id": 29376,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:51:42.640497"
+    },
+    {
+      "instance_id": 31776,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:52:07.918128"
+    },
+    {
+      "instance_id": 34048,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:52:31.876668"
+    },
+    {
+      "instance_id": 36768,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:53:00.420828"
+    },
+    {
+      "instance_id": 39104,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:53:24.925342"
+    },
+    {
+      "instance_id": 41376,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T06:53:48.839577"
+    }
+  ],
+  "cumulative_accuracy": 0.8129845193807752,
+  "window_accuracy": 0.815
+}

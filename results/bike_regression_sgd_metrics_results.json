@@ -1,0 +1,40 @@
+{
+  "total_instances": 17378,
+  "drift_events": 6,
+  "drift_details": [
+    {
+      "instance_id": 2145,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T09:07:29.161918"
+    },
+    {
+      "instance_id": 4833,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T09:07:29.974036"
+    },
+    {
+      "instance_id": 7393,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T09:07:30.787710"
+    },
+    {
+      "instance_id": 9441,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T09:07:31.424392"
+    },
+    {
+      "instance_id": 13185,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T09:07:52.195734"
+    },
+    {
+      "instance_id": 16097,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T09:08:22.723290"
+    }
+  ],
+  "cumulative_mae": 118.62734008972195,
+  "cumulative_mse": 22787.321957365595,
+  "window_mae": 116.45164271591064,
+  "window_mse": 22272.935530986553
+}

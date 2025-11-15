@@ -1,0 +1,20 @@
+{
+  "total_instances": 17379,
+  "drift_events": 2,
+  "drift_details": [
+    {
+      "instance_id": 2016,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T08:48:05.753134"
+    },
+    {
+      "instance_id": 8672,
+      "detector": "ADWIN",
+      "timestamp": "2025-11-15T08:49:15.664570"
+    }
+  ],
+  "cumulative_mae": 110.1631267043545,
+  "cumulative_mse": 28448.872391556244,
+  "window_mae": 85.25099075422692,
+  "window_mse": 13848.217891274458
+}
