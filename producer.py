@@ -150,7 +150,8 @@ def stream_bike_dataset(producer, topic_name, stream_rate=0.1, inject_drift=Fals
             
             # Extract features and target
             features = instance.x
-            target = instance.y
+            # RegressionInstance uses y_value instead of y
+            target = instance.y_value
             
             # Scale target if drift is injected (multiply by 2 to simulate concept drift)
             if inject_drift and drift_triggered:

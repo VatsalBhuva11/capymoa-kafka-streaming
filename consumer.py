@@ -91,6 +91,13 @@ class MetricsTracker:
         self.cumulative_correct = 0
         self.cumulative_errors = []
         
+        # Track model segment start (for resetting cumulative metrics after drift)
+        self.model_segment_start_instance = 0
+        self.model_segment_errors = []  # Errors for current model segment only
+        self.use_segment_metrics = False  # Track if we should use segment metrics
+        self.warmup_instances = 0  # Count instances since last reset (for warmup period)
+        self.warmup_period = 200  # Number of instances to exclude from cumulative after reset
+        
         # Rolling window metrics
         self.window_predictions = deque(maxlen=window_size)
         self.window_actuals = deque(maxlen=window_size)
@@ -113,6 +120,14 @@ class MetricsTracker:
         self.window_actuals.append(actual)
         
         if error is not None:
+            # Add to segment-specific errors if we're tracking segments
+            # Skip warmup period after model reset to avoid huge initial errors
+            if self.use_segment_metrics:
+                if self.warmup_instances >= self.warmup_period:
+                    self.model_segment_errors.append(error)
+                else:
+                    self.warmup_instances += 1
+            # Also keep full cumulative for backward compatibility
             self.cumulative_errors.append(error)
             self.window_errors.append(error)
     
@@ -123,6 +138,18 @@ class MetricsTracker:
             'detector': detector_name,
             'timestamp': datetime.now().isoformat()
         })
+    
+    def reset_cumulative_metrics(self, current_instance):
+        """Reset cumulative metrics after model reinitialization."""
+        # Start a new model segment
+        self.model_segment_start_instance = current_instance
+        self.model_segment_errors = []
+        self.use_segment_metrics = True  # Enable segment-based tracking
+        self.warmup_instances = 0  # Reset warmup counter
+        # Also reset full cumulative for clean tracking
+        self.cumulative_errors = []
+        self.cumulative_correct = 0
+        # Note: total_instances is kept to track overall progress
     
     def get_cumulative_accuracy(self):
         """Get cumulative accuracy for classification."""
@@ -139,16 +166,24 @@ class MetricsTracker:
         return correct / len(self.window_predictions)
     
     def get_cumulative_mae(self):
-        """Get cumulative MAE for regression."""
-        if self.task_type != 'regression' or len(self.cumulative_errors) == 0:
+        """Get cumulative MAE for regression (current model segment only after drift)."""
+        if self.task_type != 'regression':
             return None
-        return np.mean(self.cumulative_errors)
+        # Use segment errors if segment tracking is enabled, otherwise use full cumulative
+        errors_to_use = self.model_segment_errors if self.use_segment_metrics else self.cumulative_errors
+        if len(errors_to_use) == 0:
+            return None
+        return np.mean(errors_to_use)
     
     def get_cumulative_mse(self):
-        """Get cumulative MSE for regression."""
-        if self.task_type != 'regression' or len(self.cumulative_errors) == 0:
+        """Get cumulative MSE for regression (current model segment only after drift)."""
+        if self.task_type != 'regression':
             return None
-        return np.mean([e**2 for e in self.cumulative_errors])
+        # Use segment errors if segment tracking is enabled, otherwise use full cumulative
+        errors_to_use = self.model_segment_errors if self.use_segment_metrics else self.cumulative_errors
+        if len(errors_to_use) == 0:
+            return None
+        return np.mean([e**2 for e in errors_to_use])
     
     def get_window_mae(self):
         """Get window MAE for regression."""
@@ -272,7 +307,7 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
             # Use label variable (from Kafka message) instead of accessing instance.y
             evaluator.update(label, prediction)
             
-            # Update metrics
+            # Calculate error for drift detection
             # Ensure both are same type for comparison
             pred_val = prediction
             label_val = label
@@ -281,11 +316,11 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
                 pred_val = int(prediction)
                 label_val = int(label)
             is_correct = int(pred_val == label_val)
-            metrics.update(pred_val, label_val, error=1.0 - is_correct)
+            error = 1.0 - is_correct
             
-            # Drift detection on prediction error
+            # Drift detection on prediction error (before updating metrics)
+            drift_detected_this_iteration = False
             if drift_detector is not None:
-                error = 1.0 - is_correct
                 drift_detector.update(error)
                 
                 if drift_detector.drift_detected:
@@ -295,12 +330,19 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
                     if instance_count > 100 and instances_since_last_drift >= drift_cooldown:
                         print(f"\n[DRIFT DETECTED] Instance {instance_count} - Reinitializing model")
                         metrics.record_drift(instance_count, 'ADWIN')
+                        # Reset cumulative metrics BEFORE adding current error
+                        # This ensures the drift instance error doesn't pollute new segment
+                        metrics.reset_cumulative_metrics(instance_count)
                         model = create_classifier(model_name, schema)
                         drift_detector = ADWIN(delta=0.01)  # Reset detector with same sensitivity
                         last_drift_instance = instance_count
+                        drift_detected_this_iteration = True
                     elif drift_detector.drift_detected and instances_since_last_drift < drift_cooldown:
                         # Suppress drift detection during cooldown period
                         pass
+            
+            # Update metrics AFTER drift check (so drift instance error goes to new segment)
+            metrics.update(pred_val, label_val, error=error)
             
             # Train model
             model.train(instance)
@@ -416,9 +458,9 @@ def process_regression_stream(consumer, topic_name, model_name, use_drift_detect
             
             # Calculate error
             error = abs(prediction - target)
-            metrics.update(prediction, target, error=error)
             
-            # Drift detection on prediction error
+            # Drift detection on prediction error (before updating metrics)
+            drift_detected_this_iteration = False
             if drift_detector is not None:
                 drift_detector.update(error)
                 
@@ -429,12 +471,19 @@ def process_regression_stream(consumer, topic_name, model_name, use_drift_detect
                     if instance_count > 100 and instances_since_last_drift >= drift_cooldown:
                         print(f"\n[DRIFT DETECTED] Instance {instance_count} - Reinitializing model")
                         metrics.record_drift(instance_count, 'ADWIN')
+                        # Reset cumulative metrics BEFORE adding current error
+                        # This ensures the drift instance error doesn't pollute new segment
+                        metrics.reset_cumulative_metrics(instance_count)
                         model = create_regressor(model_name, schema)
                         drift_detector = ADWIN(delta=0.01)  # Reset detector with same sensitivity
                         last_drift_instance = instance_count
+                        drift_detected_this_iteration = True
                     elif drift_detector.drift_detected and instances_since_last_drift < drift_cooldown:
                         # Suppress drift detection during cooldown period
                         pass
+            
+            # Update metrics AFTER drift check (so drift instance error goes to new segment)
+            metrics.update(prediction, target, error=error)
             
             # Train model
             model.train(instance)
@@ -445,10 +494,11 @@ def process_regression_stream(consumer, topic_name, model_name, use_drift_detect
                 cum_mse = metrics.get_cumulative_mse()
                 win_mae = metrics.get_window_mae()
                 cum_mae_str = f"{cum_mae:.4f}" if cum_mae is not None else "N/A"
+                cum_mse_str = f"{cum_mse:.4f}" if cum_mse is not None else "N/A"
                 win_mae_str = f"{win_mae:.4f}" if win_mae is not None else "N/A"
                 print(f"Instance {instance_count:6d} | "
                       f"Cumulative MAE: {cum_mae_str} | "
-                      f"Cumulative MSE: {cum_mse:.4f if cum_mse is not None else 'N/A'} | "
+                      f"Cumulative MSE: {cum_mse_str} | "
                       f"Window MAE: {win_mae_str:>6} | "
                       f"Drifts: {len(metrics.drift_events)}")
                 last_log_time = time.time()
