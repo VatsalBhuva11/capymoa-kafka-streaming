@@ -124,6 +124,7 @@ group14/
 ├── docker-compose.yml      # Kafka + Zookeeper setup
 ├── producer.py             # Kafka producer for streaming datasets
 ├── consumer.py             # Kafka consumer with online learning
+├── dashboard.py            # Live visualization dashboard
 ├── experiment_runner.py    # Experiment runner and comparison tool
 ├── requirements.txt        # Python dependencies
 ├── README.md              # This file
@@ -191,6 +192,46 @@ docker-compose down
    ```
 
 4. View results in `results/electricity_arf_results.json`
+
+### 5. Live Visualization Dashboard
+
+Start the interactive dashboard to monitor metrics in real-time:
+
+```bash
+python dashboard.py
+```
+
+The dashboard will be available at `http://127.0.0.1:8050`
+
+**Dashboard Features:**
+- **Real-time Updates**: Automatically refreshes every 2 seconds (configurable)
+- **Multi-Model Comparison**: Compare multiple models side-by-side
+- **Interactive Plots**: 
+  - Cumulative metrics over time
+  - Rolling window metrics (last 1000 instances)
+  - Concept drift events visualization
+- **Filters**: Filter by task type, dataset, and select specific models
+- **Summary Cards**: Quick view of best performing models
+- **Metrics Table**: Latest metrics for all running experiments
+
+**Dashboard Options:**
+- `--results-dir`: Directory containing CSV log files (default: results)
+- `--port`: Port to run dashboard on (default: 8050)
+- `--host`: Host to bind to (default: 127.0.0.1)
+- `--update-interval`: Seconds between auto-refreshes (default: 2)
+- `--debug`: Run in debug mode
+
+**Example:**
+```bash
+# Start dashboard with custom settings
+python dashboard.py --port 8050 --update-interval 3
+
+# In another terminal, run consumer with logging
+python consumer.py --topic ml-stream-electricity --task classification \
+    --model hoeffding_tree --log-file results/electricity_hoeffding_tree_metrics.csv
+```
+
+The dashboard will automatically detect and display metrics from all CSV files in the results directory.
 
 ## References
 
