@@ -221,8 +221,13 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
     
     # Create drift detector
     drift_detector = None
+    last_drift_instance = 0  # Track last drift detection to implement cooldown
+    drift_cooldown = 2000  # Minimum instances between drift detections
     if use_drift_detection:
-        drift_detector = ADWIN(delta=0.002)
+        # ADWIN delta: lower = more sensitive (more detections, more false positives)
+        # 0.002 is very sensitive, 0.01-0.02 is more conservative
+        # For Electricity dataset, 0.01-0.02 reduces false positives significantly
+        drift_detector = ADWIN(delta=0.01)  # More conservative, fewer false positives
     
     # Initialize preprocessor and metrics
     preprocessor = OnlinePreprocessor(task_type='classification')
@@ -284,10 +289,18 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
                 drift_detector.update(error)
                 
                 if drift_detector.drift_detected:
-                    print(f"\n[DRIFT DETECTED] Instance {instance_count} - Reinitializing model")
-                    metrics.record_drift(instance_count, 'ADWIN')
-                    model = create_classifier(model_name, schema)
-                    drift_detector = ADWIN(delta=0.002)  # Reset detector
+                    # Only detect drift after model has seen enough examples
+                    # AND enforce cooldown period to avoid rapid false positives
+                    instances_since_last_drift = instance_count - last_drift_instance
+                    if instance_count > 100 and instances_since_last_drift >= drift_cooldown:
+                        print(f"\n[DRIFT DETECTED] Instance {instance_count} - Reinitializing model")
+                        metrics.record_drift(instance_count, 'ADWIN')
+                        model = create_classifier(model_name, schema)
+                        drift_detector = ADWIN(delta=0.01)  # Reset detector with same sensitivity
+                        last_drift_instance = instance_count
+                    elif drift_detector.drift_detected and instances_since_last_drift < drift_cooldown:
+                        # Suppress drift detection during cooldown period
+                        pass
             
             # Train model
             model.train(instance)
@@ -359,8 +372,13 @@ def process_regression_stream(consumer, topic_name, model_name, use_drift_detect
     
     # Create drift detector
     drift_detector = None
+    last_drift_instance = 0  # Track last drift detection to implement cooldown
+    drift_cooldown = 2000  # Minimum instances between drift detections
     if use_drift_detection:
-        drift_detector = ADWIN(delta=0.002)
+        # ADWIN delta: lower = more sensitive (more detections, more false positives)
+        # 0.002 is very sensitive, 0.01-0.02 is more conservative
+        # For regression, 0.01-0.02 reduces false positives significantly
+        drift_detector = ADWIN(delta=0.01)  # More conservative, fewer false positives
     
     # Initialize preprocessor and metrics
     preprocessor = OnlinePreprocessor(task_type='regression')
@@ -405,10 +423,18 @@ def process_regression_stream(consumer, topic_name, model_name, use_drift_detect
                 drift_detector.update(error)
                 
                 if drift_detector.drift_detected:
-                    print(f"\n[DRIFT DETECTED] Instance {instance_count} - Reinitializing model")
-                    metrics.record_drift(instance_count, 'ADWIN')
-                    model = create_regressor(model_name, schema)
-                    drift_detector = ADWIN(delta=0.002)  # Reset detector
+                    # Only detect drift after model has seen enough examples
+                    # AND enforce cooldown period to avoid rapid false positives
+                    instances_since_last_drift = instance_count - last_drift_instance
+                    if instance_count > 100 and instances_since_last_drift >= drift_cooldown:
+                        print(f"\n[DRIFT DETECTED] Instance {instance_count} - Reinitializing model")
+                        metrics.record_drift(instance_count, 'ADWIN')
+                        model = create_regressor(model_name, schema)
+                        drift_detector = ADWIN(delta=0.01)  # Reset detector with same sensitivity
+                        last_drift_instance = instance_count
+                    elif drift_detector.drift_detected and instances_since_last_drift < drift_cooldown:
+                        # Suppress drift detection during cooldown period
+                        pass
             
             # Train model
             model.train(instance)
