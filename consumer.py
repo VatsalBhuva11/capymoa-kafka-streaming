@@ -4,7 +4,7 @@ Handles preprocessing, online model training, evaluation, and concept drift dete
 """
 from kafka import KafkaConsumer
 from capymoa.classifier import HoeffdingTree, AdaptiveRandomForestClassifier, KNN
-from capymoa.regressor import FIMTDD, AdaptiveRandomForestRegressor, KNNRegressor
+from capymoa.regressor import FIMTDD, AdaptiveRandomForestRegressor, KNNRegressor, SGDRegressor
 from capymoa.evaluation import ClassificationEvaluator, RegressionEvaluator
 from river.drift import ADWIN
 import json
@@ -237,6 +237,9 @@ def create_regressor(model_name, schema):
         return AdaptiveRandomForestRegressor(schema=schema, ensemble_size=10)
     elif model_name == 'knn':
         return KNNRegressor(schema=schema, k=5)
+    elif model_name == 'sgd':
+        # Use CapyMOA's built-in SGDRegressor
+        return SGDRegressor(schema=schema)
     else:
         raise ValueError(f"Unknown regressor: {model_name}")
 
@@ -299,6 +302,12 @@ def process_classification_stream(consumer, topic_name, model_name, use_drift_de
             
             # Test-then-train evaluation
             prediction = model.predict(instance)
+            
+            # Handle None predictions (model needs warmup)
+            if prediction is None:
+                # Train first, then skip evaluation for this instance
+                model.train(instance)
+                continue
             
             # Debug: Check prediction and label for first few instances and periodically
             if instance_count <= 10 or (instance_count % 1000 == 0 and instance_count <= 2000):
@@ -453,6 +462,13 @@ def process_regression_stream(consumer, topic_name, model_name, use_drift_detect
             
             # Test-then-train evaluation
             prediction = model.predict(instance)
+            
+            # Handle None predictions (model needs warmup)
+            if prediction is None:
+                # Train first, then skip evaluation for this instance
+                model.train(instance)
+                continue
+            
             # Use target variable instead of instance.y
             evaluator.update(target, prediction)
             
@@ -538,7 +554,7 @@ def main():
     parser.add_argument('--task', type=str, choices=['classification', 'regression'],
                        required=True, help='Task type')
     parser.add_argument('--model', type=str, 
-                       choices=['hoeffding_tree', 'arf', 'knn', 'fimtdd'],
+                       choices=['hoeffding_tree', 'arf', 'knn', 'fimtdd', 'sgd'],
                        default='hoeffding_tree',
                        help='Model to use')
     parser.add_argument('--no-drift-detection', action='store_true',
@@ -553,10 +569,10 @@ def main():
     args = parser.parse_args()
     
     # Validate model for task
-    if args.task == 'classification' and args.model == 'fimtdd':
-        print("Error: FIMTDD is a regressor, not a classifier")
+    if args.task == 'classification' and args.model in ['fimtdd', 'sgd']:
+        print(f"Error: {args.model} is a regressor, not a classifier")
         sys.exit(1)
-    if args.task == 'regression' and args.model in ['hoeffding_tree', 'arf', 'knn']:
+    if args.task == 'regression' and args.model in ['hoeffding_tree']:
         print(f"Error: {args.model} is a classifier, not a regressor")
         sys.exit(1)
     
